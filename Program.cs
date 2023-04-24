@@ -1,74 +1,49 @@
 using System;
-using System.Diagnostics;
-using System.Net;
 using System.Net.NetworkInformation;
+using System.Threading;
 
-class InternetUsage
+namespace NetworkUsageMonitor
 {
-    private PerformanceCounterCategory category;
-    private string networkCard;
-
-    public InternetUsage(string networkCard)
+    class Program
     {
-        this.networkCard = networkCard;
-        category = new PerformanceCounterCategory("Network Interface");
-    }
-
-    public float GetCurrentUsage()
-    {
-        var instances = category.GetInstanceNames();
-
-        foreach (var instance in instances)
+        public static (long, long) GetNetworkUsage()
         {
-            if (instance == networkCard)
+            NetworkInterface[] networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
+            long totalBytesSent = 0;
+            long totalBytesReceived = 0;
+
+            foreach (NetworkInterface networkInterface in networkInterfaces)
             {
-                using (var downloadCounter = new PerformanceCounter("Network Interface", "Bytes Received/sec", instance))
-                using (var uploadCounter = new PerformanceCounter("Network Interface", "Bytes Sent/sec", instance))
+                if (networkInterface.OperationalStatus == OperationalStatus.Up)
                 {
-                    return downloadCounter.NextValue() + uploadCounter.NextValue();
+                    IPv4InterfaceStatistics statistics = networkInterface.GetIPv4Statistics();
+                    totalBytesSent += statistics.BytesSent;
+                    totalBytesReceived += statistics.BytesReceived;
                 }
             }
+
+            return (totalBytesSent, totalBytesReceived);
         }
 
-        throw new Exception("Network card not found");
-    }
-}
-
-class Program
-{
-    static void Main(string[] args)
-    {
-        var networkCards = NetworkInterface.GetAllNetworkInterfaces();
-        for (int i = 0; i < networkCards.Length; i++)
+        public static void DisplayNetworkUsage(long oldBytesSent, long oldBytesReceived)
         {
-            Console.WriteLine($"{i + 1}. Name: {networkCards[i].Name} - Description: {networkCards[i].Description}");
+            (long newBytesSent, long newBytesReceived) = GetNetworkUsage();
+            long sentDifference = newBytesSent - oldBytesSent;
+            long receivedDifference = newBytesReceived - oldBytesReceived;
+
+            Console.WriteLine($"Bytes sent: {sentDifference}");
+            Console.WriteLine($"Bytes received: {receivedDifference}");
+            Console.WriteLine($"Total data: {sentDifference + receivedDifference}");
         }
 
-        Console.Write("Enter # of the interface: ");
-        var input = Console.ReadLine();
-        int index;
-        if (!int.TryParse(input, out index) || index < 1 || index > networkCards.Length)
+        public static void Main(string[] args)
         {
-            Console.WriteLine("Invalid input.");
-            return;
-        }
-
-        try
-        {
-            var usage = new InternetUsage(networkCards[index - 1].Name);
-
             while (true)
             {
-                var currentUsage = usage.GetCurrentUsage();
-                Console.WriteLine($"Current internet usage: {currentUsage} bytes/sec");
-                System.Threading.Thread.Sleep(1000);
+                (long oldBytesSent, long oldBytesReceived) = GetNetworkUsage();
+                Thread.Sleep(1000);
+                DisplayNetworkUsage(oldBytesSent, oldBytesReceived);
             }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex.Message);
-        }
-
-        Console.ReadKey();
     }
 }
